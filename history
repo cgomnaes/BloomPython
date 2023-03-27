@@ -1,0 +1,50 @@
+import pandas as pd
+import blpapi
+
+# Establish a connection to the Bloomberg API
+session = blpapi.Session()
+session.start()
+session.openService("//blp/refdata")
+refDataService = session.getService("//blp/refdata")
+
+# Define the request parameters
+security = "AAPL US Equity"
+fields = ["PX_LAST", "VOLUME"]
+start_date = "2022-01-01"
+end_date = "2022-03-27"
+overrides = [{"fieldId": "BEST_FOWARD_ESTIMATE", "value": "3"}]
+
+# Create the request
+request = refDataService.createRequest("HistoricalDataRequest")
+request.getElement("securities").appendValue(security)
+request.getElement("fields").appendValues(fields)
+request.set("startDate", start_date)
+request.set("endDate", end_date)
+for override in overrides:
+    request.getElement("overrides").appendElement().setFromDict(override)
+
+# Send the request and retrieve the response
+session.sendRequest(request)
+response = []
+while True:
+    ev = session.nextEvent()
+    if ev.eventType() == blpapi.Event.RESPONSE or ev.eventType() == blpapi.Event.PARTIAL_RESPONSE:
+        response.append(ev)
+        if ev.eventType() == blpapi.Event.RESPONSE:
+            break
+
+# Extract the data from the response and store it in a DataFrame
+data = []
+for msg in response:
+    for securityData in msg.getElement("securityData"):
+        security_name = securityData.getElement("security").getValue()
+        for fieldData in securityData.getElement("fieldData"):
+            date = fieldData.getElement("date").getValue()
+            px_last = fieldData.getElementAsFloat("PX_LAST")
+            volume = fieldData.getElementAsInteger("VOLUME")
+            data.append([security_name, date, px_last, volume])
+
+df = pd.DataFrame(data, columns=["security", "date", "px_last", "volume"])
+
+# Close the Bloomberg API session
+session.stop()
